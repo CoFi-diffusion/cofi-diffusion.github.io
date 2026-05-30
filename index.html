@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoFi: Coarse-to-Fine Compositional Diffusion for Long-Horizon Planning</title>
+    <meta name="description" content="CoFi is a training-free inference-time sampler that separates global structure formation from local detail refinement for long-horizon compositional diffusion.">
+    <meta property="og:title" content="CoFi: Coarse-to-Fine Compositional Diffusion">
+    <meta property="og:description" content="An inference-time sampler for compositional generation with 2-8x fewer denoiser evaluations.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://cofi-diffusion.github.io">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --color-bg: #ffffff;
+            --color-bg-alt: #f5f7fa;
+            --color-text: #2c3e50;
+            --color-text-light: #6c757d;
+            --color-accent: #3273dc;
+            --color-accent-hover: #2759b3;
+            --color-success: #48c774;
+            --color-border: #e0e0e0;
+            --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            --max-width: 1100px;
+        }
+        body { font-family: var(--font-main); color: var(--color-text); line-height: 1.7; background: var(--color-bg); }
+        .container { max-width: var(--max-width); margin: 0 auto; padding: 0 2rem; }
+        section { padding: 3rem 0; }
+        .bg-alt { background: var(--color-bg-alt); }
+        .hero { text-align: center; padding: 4rem 2rem 1rem; }
+        .hero h1 { font-size: 2.4rem; font-weight: 700; line-height: 1.3; margin-bottom: 1.5rem; }
+        .authors { font-size: 1.1rem; margin-bottom: 0.5rem; }
+        .authors a { color: var(--color-accent); text-decoration: none; }
+        .authors a:hover { text-decoration: underline; }
+        .affiliations { font-size: 0.95rem; color: var(--color-text-light); margin-bottom: 1.5rem; }
+        .affiliations sup { color: var(--color-accent); }
+        .link-group { display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap; }
+        .link-group a {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            padding: 0.5rem 1.2rem; border-radius: 6px;
+            background: var(--color-accent); color: #fff;
+            text-decoration: none; font-weight: 500; font-size: 0.95rem;
+            transition: background 0.2s;
+        }
+        .link-group a:hover { background: var(--color-accent-hover); }
+        .section-title {
+            font-size: 1.8rem; font-weight: 700; margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            display: inline-block; width: 100%; text-align: center;
+        }
+        .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; margin-top: 1.5rem; }
+        .media-grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .media-item {
+            background: #fff; border-radius: 8px; overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .media-item:hover { transform: translateY(-4px); box-shadow: 0 6px 16px rgba(0,0,0,0.15); }
+        .media-item img, .media-item video { width: 100%; display: block; }
+        .media-item.has-overlay { position: relative; }
+        .media-item.has-overlay .overlay-prompt {
+            position: absolute; bottom: 0; left: 0; right: 0;
+            background: linear-gradient(transparent, rgba(0,0,0,0.85));
+            color: #fff; padding: 2.5rem 0.8rem 0.8rem; font-size: 0.82rem; line-height: 1.4;
+            opacity: 0; transition: opacity 0.3s ease; pointer-events: none;
+        }
+        .media-item.has-overlay:hover .overlay-prompt { opacity: 1; }
+        .video-toggle { display: flex; justify-content: center; gap: 0; margin: 0.5rem 0; }
+        .video-toggle button {
+            padding: 0.15rem 0.4rem; border: 1px solid var(--color-border); background: #fff;
+            color: var(--color-text); font-size: 0.6rem; font-weight: 500; cursor: pointer;
+            transition: all 0.2s ease; white-space: nowrap;
+        }
+        .video-toggle button:first-child { border-radius: 3px 0 0 3px; }
+        .video-toggle button:last-child { border-radius: 0 3px 3px 0; border-left: none; }
+        .video-toggle button:not(:first-child):not(:last-child) { border-left: none; }
+        .video-toggle button.active {
+            background: var(--color-accent); color: #fff; border-color: var(--color-accent);
+        }
+        .prompt-selector {
+            border: 1px solid var(--color-border); border-radius: 8px;
+            background: #fff; margin: 1.5rem 0; overflow: hidden;
+        }
+        .prompt-selector-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0.6rem 1rem; cursor: pointer; font-weight: 600;
+            font-size: 0.9rem; user-select: none; background: #fff;
+            transition: background 0.2s;
+        }
+        .prompt-selector-header:hover { background: var(--color-bg-alt); }
+        .prompt-selector-header .arrow { transition: transform 0.3s; }
+        .prompt-selector-header.open .arrow { transform: rotate(180deg); }
+        .prompt-list {
+            max-height: 0; overflow: hidden; transition: max-height 0.35s ease;
+            border-top: 0 solid var(--color-border);
+        }
+        .prompt-list.open { max-height: 600px; border-top-width: 1px; overflow-y: auto; }
+        .prompt-list a {
+            display: block; padding: 0.45rem 1.2rem; font-size: 0.85rem;
+            color: var(--color-text); text-decoration: none; cursor: pointer;
+            transition: background 0.15s;
+        }
+        .prompt-list a:hover { background: var(--color-bg-alt); }
+        .prompt-list a.active { background: #e0edff; color: var(--color-accent); font-weight: 500; }
+        .pano-toggle { display: flex; justify-content: center; gap: 0; margin: 0.5rem 0; }
+        .pano-toggle button {
+            padding: 0.2rem 0.6rem; border: 1px solid var(--color-border); background: #fff;
+            color: var(--color-text); font-size: 0.7rem; font-weight: 500; cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .pano-toggle button:first-child { border-radius: 4px 0 0 4px; }
+        .pano-toggle button:last-child { border-radius: 0 4px 4px 0; }
+        .pano-toggle button:not(:first-child) { border-left: none; }
+        .pano-toggle button.active { background: var(--color-accent); color: #fff; border-color: var(--color-accent); }
+        #pano-display { min-height: 100px; }
+        #pano-display img { width: 100%; display: block; border-radius: 8px; }
+        #pano-display video { width: 100%; display: block; border-radius: 8px; }
+        .scene-vid-wrap { position: relative; }
+        .scene-vid-wrap video { width: 100%; display: block; }
+        .scene-label {
+            position: absolute; top: 0; font-size: 0.55rem; font-weight: 600;
+            color: #fff; background: rgba(0,0,0,0.5); padding: 0.1rem 0.3rem;
+            border-radius: 0 0 3px 3px;
+        }
+        .scene-label.start { left: 4%; }
+        .scene-label.goal { right: 4%; }
+        .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem; }
+        .compare-item { text-align: center; }
+        .compare-item video { width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .compare-label {
+            font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem;
+        }
+        .compare-label.baseline { color: var(--color-text-light); }
+        .compare-label.ours { color: var(--color-accent); }
+        .caption { padding: 0.75rem 1rem; font-size: 0.85rem; color: var(--color-text-light); text-align: center; }
+        .media-full { width: 100%; margin: 1.5rem 0; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.1); }
+        .media-full img { width: 100%; display: block; }
+        .placeholder {
+            background: #e8ecf1; display: flex; align-items: center; justify-content: center;
+            color: #999; font-size: 0.95rem; min-height: 200px; border-radius: 8px;
+        }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1.5rem; }
+        .two-col h3 { margin-bottom: 0.5rem; color: var(--color-accent); }
+        .bibtex-container {
+            position: relative; background: #1e1e2e; color: #cdd6f4;
+            border-radius: 8px; padding: 1.5rem; font-family: var(--font-mono);
+            font-size: 0.85rem; line-height: 1.6; overflow-x: auto; margin-top: 1rem;
+        }
+        .bibtex-container pre { white-space: pre-wrap; word-break: break-all; margin: 0; }
+        .copy-btn {
+            position: absolute; top: 0.75rem; right: 0.75rem;
+            background: var(--color-accent); color: #fff; border: none;
+            padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer;
+            font-size: 0.8rem; transition: background 0.2s;
+        }
+        .copy-btn:hover { background: var(--color-accent-hover); }
+        .copy-btn.copied { background: var(--color-success); }
+        .toc {
+            position: fixed; top: 1rem; right: 1rem; z-index: 100;
+            background: #fff; border: 1px solid var(--color-border);
+            border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-width: 220px; font-size: 0.85rem;
+        }
+        .toc-header { padding: 0.6rem 1rem; cursor: pointer; font-weight: 600; user-select: none; }
+        .toc-content { padding: 0 1rem 0.6rem; }
+        .toc-content.collapsed { display: none; }
+        .toc-content a { display: block; padding: 0.25rem 0; color: var(--color-text); text-decoration: none; }
+        .toc-content a:hover { color: var(--color-accent); }
+        h3.subsection { margin-top: 2.5rem; margin-bottom: 0.5rem; font-size: 1.2rem; text-align: center; }
+        .highlight { background: linear-gradient(120deg, #e0edff 0%, #f0f7ff 100%); padding: 1.2rem 1.5rem; border-radius: 8px; margin-top: 1.5rem; border-left: 4px solid var(--color-accent); }
+        footer { text-align: center; padding: 2rem; color: var(--color-text-light); font-size: 0.85rem; }
+        .global-text { color: rgb(120, 111, 177); font-weight: 600; }
+        .local-text { color: rgb(48, 160, 111); font-weight: 600; }
+        footer a { color: var(--color-accent); }
+        @media (max-width: 1024px) {
+            .media-grid { grid-template-columns: repeat(2, 1fr); }
+            .hero h1 { font-size: 2rem; }
+        }
+        @media (max-width: 768px) {
+            .media-grid, .media-grid-2, .two-col { grid-template-columns: 1fr; }
+            .hero h1 { font-size: 1.6rem; }
+            .container { padding: 0 1rem; }
+            section { padding: 2rem 0; }
+            .toc { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Table of Contents -->
+<nav class="toc" id="toc">
+    <div class="toc-header" id="tocHeader">Contents <span id="toggleBtn">&#9654;</span></div>
+    <div class="toc-content collapsed" id="tocContent">
+        <a href="#tldr">TL;DR</a>
+        <a href="#demos">Long-Horizon Results</a>
+        <a href="#method">Method</a>
+    </div>
+</nav>
+
+<!-- Hero -->
+<header class="hero">
+    <div class="container">
+        <h1>CoFi: Coarse-to-Fine Compositional Diffusion<br>for Long-Horizon Planning</h1>
+        <p class="authors">
+            <a href="https://bw-park.github.io">Byoungwoo Park</a><sup>1,2</sup>,
+            <a href="https://umishra.me/">Utkarsh A. Mishra</a><sup>2</sup>,
+            <a href="https://jaemoo-choi.github.io/">Jaemoo Choi</a><sup>2</sup>,
+            <a href="https://juho-lee.github.io">Juho Lee</a><sup>1</sup>,
+            <a href="https://yongxin.ae.gatech.edu/">Yongxin Chen</a><sup>2</sup>
+        </p>
+        <p class="affiliations">
+            <sup>1</sup>KAIST &nbsp;&nbsp; <sup>2</sup>Georgia Institute of Technology
+        </p>
+        <div class="link-group">
+            <a href="https://arxiv.org/abs/2606.00837">Paper</a>
+            <a href="https://github.com/bw-park/CoFi">Code</a>
+        </div>
+    </div>
+</header>
+
+<!-- TL;DR -->
+<section id="tldr" style="padding-top: 1rem;">
+    <div class="container">
+        <h2 class="section-title">TL;DR</h2>
+        <div class="highlight" style="font-size: 1.15rem; line-height: 1.8;">
+            <strong>CoFi</strong> is a simple <strong style="color: var(--color-accent);">training-free</strong>,
+            <strong style="color: var(--color-accent);">inference-time</strong> compositional diffusion sampler
+            that scales short-horizon diffusion models to long-horizon planning, panoramas, and videos at substantially lower computational cost.
+        </div>
+    </div>
+</section>
+
+<!-- Demos -->
+<section id="demos" class="bg-alt">
+    <div class="container">
+        <h2 class="section-title">Long-Horizon Results</h2>
+
+        <h3 class="subsection" style="margin-top: 1rem;">Long Video Generation</h3>
+        <p>CogVideoX-2B natively generates 49-frame clips by default. CoFi composes 9 temporal chunks into a 273-frame 720p video, <strong>extending the temporal horizon by 5.6&times; without retraining the base model.</strong></p>
+        <div class="media-grid" style="margin-top: 1.5rem;">
+            <div class="media-item has-overlay"
+                 data-scaffold="static/video/a_cute_happy_panda_dressed_in_a_small_re_scaffold.mp4"
+                 data-refinement="static/video/a_cute_happy_panda_dressed_in_a_small_re_phase3.mp4">
+                <div class="video-toggle">
+                    <button onclick="toggleVideo(this, 'scaffold')">Scaffold</button>
+                    <button class="active" onclick="toggleVideo(this, 'refinement')">Refinement</button>
+                </div>
+                <video muted loop playsinline data-autoplay controls>
+                    <source src="static/video/a_cute_happy_panda_dressed_in_a_small_re_phase3.mp4" type="video/mp4">
+                </video>
+                <div class="overlay-prompt">A cute happy panda, dressed in a small red jacket and a tiny hat, sits on a wooden stool in a serene bamboo forest, strumming a miniature acoustic guitar...</div>
+            </div>
+            <div class="media-item has-overlay"
+                 data-scaffold="static/video/the_camera_follows_behind_a_white_vintag_scaffold.mp4"
+                 data-refinement="static/video/the_camera_follows_behind_a_white_vintag_phase3.mp4">
+                <div class="video-toggle">
+                    <button onclick="toggleVideo(this, 'scaffold')">Scaffold</button>
+                    <button class="active" onclick="toggleVideo(this, 'refinement')">Refinement</button>
+                </div>
+                <video muted loop playsinline data-autoplay controls>
+                    <source src="static/video/the_camera_follows_behind_a_white_vintag_phase3.mp4" type="video/mp4">
+                </video>
+                <div class="overlay-prompt">The camera follows behind a white vintage SUV speeding up a steep dirt road on a mountain slope...</div>
+            </div>
+            <div class="media-item has-overlay"
+                 data-scaffold="static/video/a_group_of_colorful_hot_air_balloons_tak_scaffold.mp4"
+                 data-refinement="static/video/a_group_of_colorful_hot_air_balloons_tak_phase3.mp4">
+                <div class="video-toggle">
+                    <button onclick="toggleVideo(this, 'scaffold')">Scaffold</button>
+                    <button class="active" onclick="toggleVideo(this, 'refinement')">Refinement</button>
+                </div>
+                <video muted loop playsinline data-autoplay controls>
+                    <source src="static/video/a_group_of_colorful_hot_air_balloons_tak_phase3.mp4" type="video/mp4">
+                </video>
+                <div class="overlay-prompt">A group of colorful hot air balloons taking off in Cappadocia...</div>
+            </div>
+        </div>
+        <div class="media-grid" style="margin-top: 1rem;">
+            <div class="media-item has-overlay"
+                 data-scaffold="static/video/a_young_woman_with_beautiful_and_clear_e_scaffold.mp4"
+                 data-refinement="static/video/a_young_woman_with_beautiful_and_clear_e_phase3.mp4">
+                <div class="video-toggle">
+                    <button onclick="toggleVideo(this, 'scaffold')">Scaffold</button>
+                    <button class="active" onclick="toggleVideo(this, 'refinement')">Refinement</button>
+                </div>
+                <video muted loop playsinline data-autoplay controls>
+                    <source src="static/video/a_young_woman_with_beautiful_and_clear_e_phase3.mp4" type="video/mp4">
+                </video>
+                <div class="overlay-prompt">A young woman with beautiful and clear eyes in a forest wearing a crown of flowers...</div>
+            </div>
+            <div class="media-item has-overlay"
+                 data-scaffold="static/video/at_sunset_a_modified_ford_f_150_raptor_r_scaffold.mp4"
+                 data-refinement="static/video/at_sunset_a_modified_ford_f_150_raptor_r_phase3.mp4">
+                <div class="video-toggle">
+                    <button onclick="toggleVideo(this, 'scaffold')">Scaffold</button>
+                    <button class="active" onclick="toggleVideo(this, 'refinement')">Refinement</button>
+                </div>
+                <video muted loop playsinline data-autoplay controls>
+                    <source src="static/video/at_sunset_a_modified_ford_f_150_raptor_r_phase3.mp4" type="video/mp4">
+                </video>
+                <div class="overlay-prompt">At sunset a modified Ford F-150 Raptor races through a desert landscape...</div>
+            </div>
+            <div class="media-item has-overlay"
+                 data-scaffold="static/video/a_detailed_wooden_toy_ship_with_intricat_scaffold.mp4"
+                 data-refinement="static/video/a_detailed_wooden_toy_ship_with_intricat_phase3.mp4">
+                <div class="video-toggle">
+                    <button onclick="toggleVideo(this, 'scaffold')">Scaffold</button>
+                    <button class="active" onclick="toggleVideo(this, 'refinement')">Refinement</button>
+                </div>
+                <video muted loop playsinline data-autoplay controls>
+                    <source src="static/video/a_detailed_wooden_toy_ship_with_intricat_phase3.mp4" type="video/mp4">
+                </video>
+                <div class="overlay-prompt">A detailed wooden toy ship with intricate carvings sails on a carpet sea...</div>
+            </div>
+        </div>
+        <h3 class="subsection">Long-Horizon Robotic Planning</h3>
+        <p>CoFi composes short local plans into long-horizon trajectories on OGBench. Each colored segment corresponds to one local plan, and the final trajectory is obtained by aligning and refining these segments into <strong>a coherent task-level global plan</strong>.</p>
+
+        <h4 style="margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--color-text-light);">Maze-Stitch</h4>
+        <div class="media-grid" style="grid-template-columns: repeat(5, 1fr);">
+            <div class="media-item"
+                 data-scaffold="static/planning/maze_stitch_ep6_scaffold.png"
+                 data-refinement="static/planning/maze_stitch_ep6_refinement.png"
+                 data-generation="static/planning/maze_stitch_ep6.mp4">
+                <div class="video-toggle" style="margin: 0.3rem 0;">
+                    <button onclick="toggleMaze(this, 'scaffold')">Scaffold</button>
+                    <button onclick="toggleMaze(this, 'refinement')">Refinement</button>
+                    <button class="active" onclick="toggleMaze(this, 'generation')">Generation</button>
+                </div>
+                <div class="maze-display"><video muted loop autoplay playsinline controls style="width:100%;display:block;"><source src="static/planning/maze_stitch_ep6.mp4" type="video/mp4"></video></div>
+                <div class="caption" style="padding: 0.2rem 0;">Task 1</div>
+            </div>
+            <div class="media-item"
+                 data-scaffold="static/planning/maze_stitch_ep24_scaffold.png"
+                 data-refinement="static/planning/maze_stitch_ep24_refinement.png"
+                 data-generation="static/planning/maze_stitch_ep24.mp4">
+                <div class="video-toggle" style="margin: 0.3rem 0;">
+                    <button onclick="toggleMaze(this, 'scaffold')">Scaffold</button>
+                    <button onclick="toggleMaze(this, 'refinement')">Refinement</button>
+                    <button class="active" onclick="toggleMaze(this, 'generation')">Generation</button>
+                </div>
+                <div class="maze-display"><video muted loop autoplay playsinline controls style="width:100%;display:block;"><source src="static/planning/maze_stitch_ep24.mp4" type="video/mp4"></video></div>
+                <div class="caption" style="padding: 0.2rem 0;">Task 2</div>
+            </div>
+            <div class="media-item"
+                 data-scaffold="static/planning/maze_stitch_ep49_scaffold.png"
+                 data-refinement="static/planning/maze_stitch_ep49_refinement.png"
+                 data-generation="static/planning/maze_stitch_ep49.mp4">
+                <div class="video-toggle" style="margin: 0.3rem 0;">
+                    <button onclick="toggleMaze(this, 'scaffold')">Scaffold</button>
+                    <button onclick="toggleMaze(this, 'refinement')">Refinement</button>
+                    <button class="active" onclick="toggleMaze(this, 'generation')">Generation</button>
+                </div>
+                <div class="maze-display"><video muted loop autoplay playsinline controls style="width:100%;display:block;"><source src="static/planning/maze_stitch_ep49.mp4" type="video/mp4"></video></div>
+                <div class="caption" style="padding: 0.2rem 0;">Task 3</div>
+            </div>
+            <div class="media-item"
+                 data-scaffold="static/planning/maze_stitch_ep68_scaffold.png"
+                 data-refinement="static/planning/maze_stitch_ep68_refinement.png"
+                 data-generation="static/planning/maze_stitch_ep68.mp4">
+                <div class="video-toggle" style="margin: 0.3rem 0;">
+                    <button onclick="toggleMaze(this, 'scaffold')">Scaffold</button>
+                    <button onclick="toggleMaze(this, 'refinement')">Refinement</button>
+                    <button class="active" onclick="toggleMaze(this, 'generation')">Generation</button>
+                </div>
+                <div class="maze-display"><video muted loop autoplay playsinline controls style="width:100%;display:block;"><source src="static/planning/maze_stitch_ep68.mp4" type="video/mp4"></video></div>
+                <div class="caption" style="padding: 0.2rem 0;">Task 4</div>
+            </div>
+            <div class="media-item"
+                 data-scaffold="static/planning/maze_stitch_ep90_scaffold.png"
+                 data-refinement="static/planning/maze_stitch_ep90_refinement.png"
+                 data-generation="static/planning/maze_stitch_ep90.mp4">
+                <div class="video-toggle" style="margin: 0.3rem 0;">
+                    <button onclick="toggleMaze(this, 'scaffold')">Scaffold</button>
+                    <button onclick="toggleMaze(this, 'refinement')">Refinement</button>
+                    <button class="active" onclick="toggleMaze(this, 'generation')">Generation</button>
+                </div>
+                <div class="maze-display"><video muted loop autoplay playsinline controls style="width:100%;display:block;"><source src="static/planning/maze_stitch_ep90.mp4" type="video/mp4"></video></div>
+                <div class="caption" style="padding: 0.2rem 0;">Task 5</div>
+            </div>
+        </div>
+
+        <h4 style="margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--color-text-light);">Scene-Play</h4>
+        <div class="media-grid media-grid-2" style="margin-top: 0.5rem;">
+            <div class="media-item">
+                <div class="scene-vid-wrap">
+                    <span class="scene-label start">Start</span>
+                    <span class="scene-label goal">Goal</span>
+                    <video muted loop playsinline data-autoplay controls><source src="static/planning/scene_play_task1.mp4" type="video/mp4"></video>
+                </div>
+                <div class="caption" style="padding: 0.2rem 0;">Task 1</div>
+            </div>
+            <div class="media-item">
+                <div class="scene-vid-wrap">
+                    <span class="scene-label start">Start</span>
+                    <span class="scene-label goal">Goal</span>
+                    <video muted loop playsinline data-autoplay controls><source src="static/planning/scene_play_task2.mp4" type="video/mp4"></video>
+                </div>
+                <div class="caption" style="padding: 0.2rem 0;">Task 2</div>
+            </div>
+            <div class="media-item">
+                <div class="scene-vid-wrap">
+                    <span class="scene-label start">Start</span>
+                    <span class="scene-label goal">Goal</span>
+                    <video muted loop playsinline data-autoplay controls><source src="static/planning/scene_play_task3.mp4" type="video/mp4"></video>
+                </div>
+                <div class="caption" style="padding: 0.2rem 0;">Task 3</div>
+            </div>
+            <div class="media-item">
+                <div class="scene-vid-wrap">
+                    <span class="scene-label start">Start</span>
+                    <span class="scene-label goal">Goal</span>
+                    <video muted loop playsinline data-autoplay controls><source src="static/planning/scene_play_task4.mp4" type="video/mp4"></video>
+                </div>
+                <div class="caption" style="padding: 0.2rem 0;">Task 4</div>
+            </div>
+        </div>
+
+        <h3 class="subsection">Panoramic Image Generation</h3>
+        <p>CoFi composes 9 overlapping 512&times;512 patches into a 512&times;4608 panorama while <strong>maintaining consistent style, texture, and layout</strong>.</p>
+
+        <div class="prompt-selector">
+            <div class="prompt-selector-header" id="panoPromptHeader" onclick="togglePromptList()">
+                <span id="panoPromptLabel">Last supper with cute corgis</span>
+                <span class="arrow">&#9660;</span>
+            </div>
+            <div class="prompt-list" id="panoPromptList">
+                <a class="active" onclick="selectPano(this)" data-key="last_supper_with_cute_corgis">Last supper with cute corgis</a>
+                <a onclick="selectPano(this)" data-key="a_cinematic_view_of_a_castle_in_the_sunset">A cinematic view of a castle in the sunset</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_a_snowy_mountain_peak_with_skiers">A snowy mountain peak with skiers</a>
+                <a onclick="selectPano(this)" data-key="skyline_of_a_futuristic_city_with_flying_cars">Skyline of a futuristic city with flying cars</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_a_lake_under_the_northern_lights">A lake under the northern lights</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_a_beautiful_ocean_with_coral_reef">A beautiful ocean with coral reef</a>
+                <a onclick="selectPano(this)" data-key="natural_landscape_in_anime_style_illustration">Natural landscape in anime style illustration</a>
+                <a onclick="selectPano(this)" data-key="a_beautiful_landscape_with_mountains_and_a_river">A beautiful landscape with mountains and a river</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_a_forest_with_a_misty_fog">A forest with a misty fog</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_a_city_skyline_at_night">A city skyline at night</a>
+                <a onclick="selectPano(this)" data-key="a_beach_with_palm_trees">A beach with palm trees</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_a_rock_concert">A rock concert</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_lush_forest_with_a_babbling_brook">Lush forest with a babbling brook</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_mountain_range_at_twilight">Mountain range at twilight</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_the_dolomites_with_red_lava_flowing_through_the_v">The Dolomites with red lava flowing through the valley</a>
+                <a onclick="selectPano(this)" data-key="cartoon_panorama_of_spring_summer_beautiful_nature">Cartoon panorama of spring summer beautiful nature</a>
+                <a onclick="selectPano(this)" data-key="a_film_photo_of_a_beachside_street_under_the_sunset">A beachside street under the sunset</a>
+                <a onclick="selectPano(this)" data-key="an_illustration_of_a_beach_in_la_la_land_style">A beach in La La Land style</a>
+                <a onclick="selectPano(this)" data-key="silhouette_wallpaper_of_a_dreamy_scene_with_shooting_stars">Silhouette of a dreamy scene with shooting stars</a>
+                <a onclick="selectPano(this)" data-key="a_photo_of_a_grassland_with_animals">A grassland with animals</a>
+            </div>
+        </div>
+
+        <div class="pano-toggle" id="panoToggle">
+            <button onclick="switchPanoMode(this, 'scaffold')">Scaffold</button>
+            <button onclick="switchPanoMode(this, 'refinement')">Refinement</button>
+            <button class="active" onclick="switchPanoMode(this, 'generation')">Generation</button>
+        </div>
+        <div id="pano-display" style="margin-top: 0.5rem;">
+        </div>
+    </div>
+</section>
+
+<!-- Method -->
+<section id="method">
+    <div class="container">
+        <h2 class="section-title">Method</h2>
+        <p>CoFi separates long-horizon composition into <span class="global-text">global structure formation</span> and <span class="local-text">local detail recovery</span>.</p>
+
+        <div class="two-col">
+            <div>
+                <video muted loop autoplay playsinline controls style="width:100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                    <source src="static/images/method_phase1.mp4" type="video/mp4">
+                </video>
+                <img src="static/images/method_scaffold.jpg" alt="Scaffold" style="width:100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-top: 0.5rem;">
+                <p class="caption" style="padding: 0.2rem 0;">Generated scaffold: globally coherent but locally blurred</p>
+                <h3>Stage 1: Coarse Scaffold Construction</h3>
+                <p>CoFi denoises all local plans in parallel and pulls their clean estimates toward a shared scaffold. This stage resolves long-range structure first, producing a coarse but <span class="global-text">globally aligned</span> plan.</p>
+            </div>
+            <div>
+                <video muted loop autoplay playsinline controls style="width:100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+                    <source src="static/images/method_phase23.mp4" type="video/mp4">
+                </video>
+                <img src="static/images/method_refinement.jpg" alt="Refinement" style="width:100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-top: 0.5rem;">
+                <p class="caption" style="padding: 0.2rem 0;">Final output: globally coherent with fine local detail</p>
+                <h3>Stage 2: Structure-Preserving Refinement</h3>
+                <p>CoFi re-noises the coarse scaffold to an intermediate timestep and denoises it again with the same pretrained local prior. This second pass restores <span class="local-text">local detail</span> while keeping the <span class="global-text">global arrangement</span> fixed.</p>
+            </div>
+        </div>
+
+        <div class="highlight">
+            <strong>Key insight:</strong> CoFi first fixes the global scaffold, then spends a short second pass on local refinement.
+            This gives both global coherence and local quality with only T + t* denoiser evaluations, using 
+            <strong>2&ndash;8&times; fewer</strong> evaluations than baseline.
+        </div>
+
+        <h3 class="subsection" style="margin-top: 2.5rem;">NFE&ndash;Performance Comparison</h3>
+        <p>We compare performance against the number of function evaluations (NFE) across the three domains.
+            CoFi improves the main coherence metrics across domains <strong>while using 2&ndash;8&times; fewer NFE than CDGS, substantially reducing inference cost.</strong>
+            The scaffold construction stage uses the same
+            denoiser evaluations as GSC, and the refinement stage adds only t* extra steps, giving a total
+            cost of T + t*.</p>
+        <div style="margin: 1.5rem 0; text-align: center;">
+            <img src="static/images/fig_nfe_vs_performance.png" alt="NFE vs Performance" style="width: 100%; max-width: 900px; border-radius: 8px;">
+        </div>
+        <p class="caption">
+            <strong>Left:</strong> Robotic planning &mdash; CoFi achieves 96% success with 2.1&times; fewer NFE than CDGS.
+            <strong>Center:</strong> Panoramic images &mdash; CoFi reduces Intra-LPIPS to 0.45 with 8&times; fewer NFE.
+            <strong>Right:</strong> Long videos &mdash; CoFi reaches 94.1% subject consistency with 8&times; fewer NFE.
+        </p>
+
+        <h3 class="subsection" style="margin-top: 2.5rem;">Faster and more coherent</h3>
+        <p>Side-by-side comparison of 273-frame long video generation. CoFi better preserves subject appearance and scene layout over long temporal horizons while using 8&times; fewer denoiser evaluations.</p>
+        <div class="compare-grid">
+            <div class="compare-item">
+                <div class="compare-label baseline">CDGS (6516 NFE)</div>
+                <video muted loop playsinline data-autoplay controls>
+                    <source src="static/video/cdgs_panda.mp4" type="video/mp4">
+                </video>
+            </div>
+            <div class="compare-item">
+                <div class="compare-label ours">CoFi (810 NFE)</div>
+                <video muted loop playsinline data-autoplay controls>
+                    <source src="static/video/a_cute_happy_panda_dressed_in_a_small_re_phase3.mp4" type="video/mp4">
+                </video>
+            </div>
+        </div>
+        <p class="caption">"A cute happy panda, dressed in a small red jacket and a tiny hat, sits on a wooden stool
+            in a serene bamboo forest, strumming a miniature acoustic guitar..."</p>
+    </div>
+</section>
+
+
+<!-- Footer -->
+<footer>
+    <p>This website template is inspired by
+    <a href="https://self-forcing.github.io">Self-Forcing</a> and
+    <a href="https://nerfies.github.io">Nerfies</a>.</p>
+</footer>
+
+<script>
+function toggleMaze(btn, mode) {
+    var item = btn.closest('.media-item');
+    var container = item.querySelector('.maze-display');
+    item.querySelectorAll('.video-toggle button').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    if (mode === 'generation') {
+        container.innerHTML = '<video muted loop autoplay playsinline controls style="width:100%;display:block;"><source src="' + item.dataset.generation + '" type="video/mp4"></video>';
+    } else {
+        container.innerHTML = '<img src="' + item.dataset[mode] + '" style="width:100%;display:block;">';
+    }
+}
+
+function toggleVideo(btn, mode) {
+    var item = btn.closest('.media-item');
+    var video = item.querySelector('video');
+    var src = item.dataset[mode];
+    if (video.querySelector('source').getAttribute('src') === src) return;
+    var wasPlaying = !video.paused;
+    video.querySelector('source').setAttribute('src', src);
+    video.load();
+    if (wasPlaying) video.play();
+    item.querySelectorAll('.video-toggle button').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+}
+
+var currentPanoKey = '';
+var currentPanoMode = 'generation';
+
+function togglePromptList() {
+    var list = document.getElementById('panoPromptList');
+    var header = document.getElementById('panoPromptHeader');
+    list.classList.toggle('open');
+    header.classList.toggle('open');
+}
+
+function selectPano(el) {
+    currentPanoKey = el.dataset.key;
+    document.getElementById('panoPromptLabel').textContent = el.textContent;
+    document.querySelectorAll('#panoPromptList a').forEach(function(a) { a.classList.remove('active'); });
+    el.classList.add('active');
+    document.getElementById('panoToggle').style.display = 'flex';
+    togglePromptList();
+    renderPano();
+}
+
+function switchPanoMode(btn, mode) {
+    currentPanoMode = mode;
+    document.querySelectorAll('.pano-toggle button').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    renderPano();
+}
+
+function renderPano() {
+    var display = document.getElementById('pano-display');
+    var base = 'static/image/' + currentPanoKey;
+    if (currentPanoMode === 'scaffold') {
+        display.innerHTML = '<img src="' + base + '_scaffold.jpg" alt="Scaffold">';
+    } else if (currentPanoMode === 'refinement') {
+        display.innerHTML = '<img src="' + base + '_refinement.jpg" alt="Refinement">';
+    } else {
+        display.innerHTML = '<video muted loop autoplay controls playsinline style="width:100%;border-radius:8px;"><source src="' + base + '.mp4" type="video/mp4"></video>';
+    }
+}
+
+document.getElementById('tocHeader').addEventListener('click', function() {
+    var content = document.getElementById('tocContent');
+    var btn = document.getElementById('toggleBtn');
+    content.classList.toggle('collapsed');
+    btn.innerHTML = content.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
+});
+
+document.querySelectorAll('video[data-autoplay]').forEach(function(video) {
+    var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+            if (entry.isIntersecting) { video.play(); } else { video.pause(); }
+        });
+    }, { threshold: 0.5 });
+    observer.observe(video);
+});
+
+function copyBibtex() {
+    var text = document.getElementById('bibtexCode').textContent;
+    var btn = document.getElementById('copyBtn');
+    navigator.clipboard.writeText(text).then(function() {
+        btn.textContent = 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+}
+
+document.querySelectorAll('.toc-content a').forEach(function(link) {
+    link.addEventListener('click', function(e) {
+        e.preventDefault();
+        var target = document.querySelector(this.getAttribute('href'));
+        if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    });
+});
+
+// Default panorama to corgis
+currentPanoKey = 'last_supper_with_cute_corgis';
+renderPano();
+</script>
+
+</body>
+</html>
